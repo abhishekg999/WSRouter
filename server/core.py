@@ -54,6 +54,12 @@ class PacketType(Enum):
     # Broadcast a message to all users in a channel
     BROADCAST = 51
 
+
+    # Incoming message from user in channel
+    IN_MESSAGE = 100
+    # Incoming broadcast from user in channel
+    IN_BROADCAST = 101
+
     ## Router to Client
     WELCOME = 250
     OK = 254
@@ -106,14 +112,14 @@ from utils import explode, ExplodeError, Err, T
 # TODO: Make Managers return data, err response data
 class Router:
     @staticmethod
-    def handle(sid: str, data: bytes) -> bytes:
+    def handle(sid: str, data: bytes) -> bytes | None:
         packet = unserialize(data)
         if packet is None:
             return b""
         return Router._handle(sid, packet)
 
     @staticmethod
-    def _handle(sid: str, packet: Packet) -> bytes:
+    def _handle(sid: str, packet: Packet) -> bytes | None:
         # Sender is handled by WS itself, overwrite this value.
         packet.sender = sid
 
@@ -219,3 +225,21 @@ class Router:
             sid,
             {"clients": list(ChannelManager.get_channel(channel).clients)},
         )
+
+    """
+    These packets route directly to a client. 
+    """
+    @staticmethod
+    def _message(sid: str, packet: Packet) -> bytes:
+        cid = SessionManager.get_session(sid).cid
+        if cid is None:
+            return p_server_error_response(sid, "User is not in a channel")
+        
+        channel = ChannelManager.get_channel(cid)
+        if channel is None:
+            return p_server_error_response(sid, "Invalid channel")
+        
+        # Forward the message to the channel
+        channel.packet_queue.append(packet)     
+        
+        # Do not return anything to the client

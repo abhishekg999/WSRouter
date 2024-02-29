@@ -11,13 +11,15 @@ class Channel:
         self.deletion_token = str(uuid4())
 
         self.password = password
-        self.clients = set()
+        self.clients = {}
 
-    def add_client(self, sid):
-        self.clients.add(sid)
+        self.packet_queue = []
+
+    def add_client(self, sid, user):
+        self.clients[sid] = user
 
     def remove_client(self, sid):
-        self.clients.remove(sid)
+        del self.clients[sid]
 
 
 class ChannelManager:
@@ -49,9 +51,11 @@ class ChannelManager:
         res, err = SessionManager.set_user_in_channel(sid, cid)
         if not res:
             return False, err
+        
+        user = SessionManager.get_session(sid)
 
         channel = channels.get(cid)
-        channel.add_client(sid)
+        channel.add_client(sid, user)
 
         return True, ""
 

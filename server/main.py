@@ -20,7 +20,8 @@ async def handler(websocket):
     try:
         async for message in websocket:
             response = Router.handle(sid, message)
-            await websocket.send(response)
+            if response:
+                await websocket.send(response)
     except ConnectionClosed:
         pass  
     finally:
