@@ -41,6 +41,18 @@ def hello():
         message = websocket.recv()
         print(unserialize(message))
 
+        data = p_create(
+            PacketType.WHO,
+            sid,
+            ROUTER,
+            {"cid": cid},
+        )
+        websocket.send(data)
+        message = websocket.recv()
+        print(unserialize(message))
+
+
+
         print(websocket.recv())
         print(websocket.recv())
         print(websocket.recv())

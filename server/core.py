@@ -45,16 +45,14 @@ class PacketType(Enum):
     # Delete channel
     DELETE = 11
 
-    # 50 Range - Channel specific while connected to channel
+    # 100 Range - Router specific while connected to channel
+    # Get information about who is in the current channel
+    WHO = 30
 
     # Send a message to a specific channel
     MESSAGE = 50
     # Broadcast a message to all users in a channel
     BROADCAST = 51
-
-    # 100 Range - Router specific while connected to channel
-    # Get information about who is in the current channel
-    WHO = 100
 
     ## Router to Client
     WELCOME = 250
@@ -102,8 +100,10 @@ def unserialize(data: bytes) -> Packet:
 
 
 from packet_utils import p_create, p_server_error_response
+from utils import explode, ExplodeError, Err, T
 
 
+# TODO: Make Managers return data, err response data
 class Router:
     @staticmethod
     def handle(sid: str, data: bytes) -> bytes:
@@ -162,8 +162,9 @@ class Router:
             return p_server_error_response(sid, "Invalid packet destination")
 
         cid = packet.data.get("cid")
-        if not ChannelManager.add_client_to_channel(cid, sid):
-            return p_server_error_response(sid, "Invalid channel")
+        success, err = ChannelManager.add_client_to_channel(cid, sid)
+        if not success:
+            return p_server_error_response(sid, err)
 
         return p_create(PacketType.OK, ROUTER, sid, {"cid": cid})
 
@@ -173,8 +174,9 @@ class Router:
             return p_server_error_response(sid, "Invalid packet destination")
 
         cid = packet.data.get("cid")
-        if not ChannelManager.remove_client_from_channel(sid, cid):
-            return p_server_error_response(sid, "Invalid channel")
+        success, err = ChannelManager.remove_client_from_channel(sid, cid)
+        if not success:
+            return p_server_error_response(sid, err)
 
         return p_create(PacketType.OK, ROUTER, sid, {"cid": cid})
 
@@ -185,7 +187,9 @@ class Router:
 
         password = packet.data.get("password", None)
         cid, deletion_token = ChannelManager.create_channel(password)
-        return p_create(PacketType.OK, ROUTER, sid, {"cid": cid, "deletion_token": deletion_token})
+        return p_create(
+            PacketType.OK, ROUTER, sid, {"cid": cid, "deletion_token": deletion_token}
+        )
 
     @staticmethod
     def _delete(sid: str, packet: Packet) -> bytes:
@@ -194,7 +198,24 @@ class Router:
 
         cid = packet.data.get("cid")
         token = packet.data.get("token")
-        if not ChannelManager.remove_channel(cid, token):
-            return p_server_error_response(sid, "Invalid channel or token")
+        success, err = ChannelManager.remove_channel(cid, token)
+        if not success:
+            return p_server_error_response(sid, err)
 
         return p_create(PacketType.OK, ROUTER, sid, {"cid": cid})
+
+    @staticmethod
+    def _who(sid: str, packet: Packet) -> bytes:
+        if packet.receiver != ROUTER:
+            return p_server_error_response(sid, "Invalid packet destination")
+
+        channel = SessionManager.get_session(sid).cid
+        if channel is None:
+            return p_server_error_response(sid, "Invalid channel")
+
+        return p_create(
+            PacketType.OK,
+            ROUTER,
+            sid,
+            {"clients": list(ChannelManager.get_channel(channel).clients)},
+        )
