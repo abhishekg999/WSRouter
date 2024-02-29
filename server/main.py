@@ -10,13 +10,14 @@ HOST = environ.get("HOST", "localhost")
 PORT = environ.get("PORT", 8765)
 
 async def handler(websocket):
-    sid = None
+    sid = SessionManager.create_session()
+    print(f"Client {sid} connected")
     async for message in websocket:
-        response = Router.handle(message)
+        response = Router.handle(sid, message)
         await websocket.send(response)
     
     print(f"Client {sid} disconnected")
-    # SessionManager.remove_session(sid)
+    SessionManager.remove_session(sid)
 
 async def main():
     async with serve(handler, HOST, PORT):
