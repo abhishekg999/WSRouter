@@ -20,13 +20,10 @@ from dataclasses import dataclass
 from uuid import UUID
 import json
 
-from session import ChannelManager, SessionManager
+from ChannelManager import ChannelManager
+from SessionManager import SessionManager
 
 ROUTER = str(UUID("00000000-0000-4000-8000-000000000000"))
-DEFAULT: Literal["d28a49f4-97c6-422c-a828-17d0d63cd044"] = str(
-    UUID("d28a49f4-97c6-422c-a828-17d0d63cd044")
-)
-
 ChannelManager.create_channel()
 
 
@@ -110,9 +107,7 @@ from packet_utils import p_create, p_server_error_response
 class Router:
     @staticmethod
     def handle(sid: str, data: bytes) -> bytes:
-        print(data)
         packet = unserialize(data)
-        print(packet)
         if packet is None:
             return b""
         return Router._handle(sid, packet)
@@ -132,16 +127,12 @@ class Router:
         match (packet.type):
             case PacketType.HELLO:
                 return Router._hello(sid, packet)
-                # case PacketType.GOODBYE:
-                #     return Router._goodbye(sid, packet)
             case PacketType.CONNECT:
                 return Router._connect(sid, packet)
             case PacketType.DISCONNECT:
                 return Router._disconnect(sid, packet)
-
             case PacketType.CHANNELS:
                 return Router._channels(sid, packet)
-
             case PacketType.WHO:
                 return Router._who(sid, packet)
             case PacketType.MESSAGE:
@@ -157,61 +148,20 @@ class Router:
 
     @staticmethod
     def _hello(sid: str, packet: Packet) -> bytes:
-        """
-        Expect:
-            PacketType.HELLO
-            Sender: sid
-            Receiver: ROUTER
-            Data: {}
-
-        Return:
-            PacketType.WELCOME
-            Sender: ROUTER
-            Receiver: sid
-            Data: {sid: str}
-        """
         return p_create(PacketType.WELCOME, ROUTER, sid, {"sid": sid})
 
     @staticmethod
     def _channels(sid: str, packet: Packet) -> bytes:
-        """
-        Expect:
-            PacketType.CHANNELS
-            Sender: sid
-            Receiver: ROUTER
-            Data: {}
-
-        Return:
-            PacketType.OK
-            Sender: ROUTER
-            Receiver: sid
-            Data: {channels: [str]}
-        """
         return p_create(
             PacketType.OK, ROUTER, sid, {"channels": ChannelManager.get_channels()}
         )
 
     @staticmethod
     def _connect(sid: str, packet: Packet) -> bytes:
-        """
-        Expect:
-            PacketType.CONNECT
-            Sender: sid
-            Receiver: ROUTER
-            Data: {cid: str, password?: str}
-
-        Return:
-            PacketType.OK | PacketType.ERROR
-            Sender: ROUTER
-            Receiver: sid
-            Data: {cid: str, error?: str}
-        """
-
         if packet.receiver != ROUTER:
             return p_server_error_response(sid, "Invalid packet destination")
 
         cid = packet.data.get("cid")
-        print(cid)
         if not ChannelManager.add_client_to_channel(cid, sid):
             return p_server_error_response(sid, "Invalid channel")
 
@@ -219,26 +169,32 @@ class Router:
 
     @staticmethod
     def _disconnect(sid: str, packet: Packet) -> bytes:
-        """
-        Expect:
-            PacketType.DISCONNECT
-            Sender: sid
-            Receiver: ROUTER
-            Data: {cid: str}
-
-        Return:
-            PacketType.OK | PacketType.ERROR
-            Sender: ROUTER
-            Receiver: sid
-            Data: {cid: str, error?: str}
-        """
-
         if packet.receiver != ROUTER:
             return p_server_error_response(sid, "Invalid packet destination")
 
         cid = packet.data.get("cid")
-
         if not ChannelManager.remove_client_from_channel(sid, cid):
             return p_server_error_response(sid, "Invalid channel")
+
+        return p_create(PacketType.OK, ROUTER, sid, {"cid": cid})
+
+    @staticmethod
+    def _create(sid: str, packet: Packet) -> bytes:
+        if packet.receiver != ROUTER:
+            return p_server_error_response(sid, "Invalid packet destination")
+
+        password = packet.data.get("password", None)
+        cid, deletion_token = ChannelManager.create_channel(password)
+        return p_create(PacketType.OK, ROUTER, sid, {"cid": cid, "deletion_token": deletion_token})
+
+    @staticmethod
+    def _delete(sid: str, packet: Packet) -> bytes:
+        if packet.receiver != ROUTER:
+            return p_server_error_response(sid, "Invalid packet destination")
+
+        cid = packet.data.get("cid")
+        token = packet.data.get("token")
+        if not ChannelManager.remove_channel(cid, token):
+            return p_server_error_response(sid, "Invalid channel or token")
 
         return p_create(PacketType.OK, ROUTER, sid, {"cid": cid})
